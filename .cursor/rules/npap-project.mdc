@@ -1,0 +1,215 @@
+---
+description: NPAP project specification, domain model, DDD architecture rules, data integrity requirements, and coding standards
+alwaysApply: true
+---
+
+# Cursor Skill: National Participation & Accountability Platform (NPAP)
+
+> **Purpose:** This document explains the product, goals, and engineering rules for Cursor agents working on this codebase.
+
+---
+
+## 1) What this application is
+
+**NPAP (National Participation & Accountability Platform)** is a civic tech application that enables **structured public accountability** and **direct participation** through:
+
+- **Time-windowed question portals** ("windows") for national officials (e.g., President, Ministers).
+- **Always-open portals** (with throttling) for local officials (e.g., Mayor, Governor).
+- **Threshold-based flows**:
+  - Petition/support thresholds to **trigger mandatory responses**.
+  - Two-criteria evaluation voting:
+    - **Transparency / truthfulness of response**
+    - **Adequacy of action / progress**
+  - **Remediation period** and a second evaluation vote.
+  - Outcomes:
+    - Close case (accepted)
+    - **Disqualification from re-running / re-appointment**
+    - **Recall (for elected offices only)**, with high thresholds and participation quorum.
+
+The platform also includes **strong anti-tampering and public auditability**:
+- Append-only event log with hash chaining.
+- Anchoring (Merkle roots / hashes) in multiple independent custodians.
+- Receipt-based verification that a vote was **counted**, without revealing the voter's choice.
+- Multi-signature governance for sensitive operations.
+
+---
+
+## 2) Product goals
+
+### Core goals
+1. **Maximum accountability** with **minimum chaos**
+   - National officials: periodic windows + emergency channel
+   - Local officials: always open + strict throttling + deduplication
+2. **High integrity results**
+   - Tamper-evident records, external anchoring, auditable tallies
+3. **Privacy by default**
+   - Votes are private; system must not allow proving vote choice to third parties.
+4. **Scalability & extensibility**
+   - Easy to add new office types, regions, rules, and workflows.
+5. **Clear, readable code**
+   - Maintainable structure, consistent naming, short functions, clear boundaries.
+
+### Non-goals (explicit)
+- **No front-end tests** (unit/e2e) are required at this stage.
+- No "always-on daily reporting mandate" beyond legal time limits in each workflow.
+- No implementation that enables vote coercion or vote-selling (e.g., publishing per-user vote choices).
+
+---
+
+## 3) Domain model (high level)
+
+### Key concepts
+- **Identity**: verified citizen identity; includes region residency attestation.
+- **Jurisdiction**: national / province / city / district; defines the eligible voter set.
+- **Office**: role type (President, Minister, MP, Governor, Mayor, Councils, etc.).
+- **Official**: a person occupying an Office in a Jurisdiction.
+- **Window**: time-bounded period during which new questions can be submitted for certain offices.
+- **Emergency Channel**: special window opened by higher threshold during crises.
+- **Question / Case**: a structured civic request; becomes a **Case** when accepted/merged and tracked.
+- **Support (Petition signatures)**: citizen endorsements to trigger mandatory response.
+- **Response**: official's formal response (evidence or measurable commitment).
+- **Commitment**: measurable plan with KPIs, timeline, owner, resources.
+- **Vote**: evaluation ballots (two-criteria), plus recall ballots where applicable.
+- **Remediation**: time period where official can improve response or execution.
+- **Outcome**: close / disqualify / management escalation / recall.
+
+### Workflow summary (Case lifecycle)
+1. Submission (only in allowed window) -> validation/dedup/merge
+2. Support accumulation -> threshold met -> **Mandatory response**
+3. Response published -> evaluation vote #1 (two criteria)
+4. If rejected -> remediation period -> evaluation vote #2
+5. Outcome applied:
+   - Close
+   - Disqualify from next term / re-appointment
+   - Escalate management action (for appointed roles)
+   - Recall (for elected roles), with quorum + supermajority
+
+---
+
+## 4) Architecture rules (DDD mandatory)
+
+### DDD requirements
+This application **must** be implemented using **Domain-Driven Design (DDD)** with:
+
+- **Bounded Contexts** (recommended):
+  1. **Identity & Eligibility**
+  2. **Jurisdictions**
+  3. **Civic Cases** (Questions/Cases/Responses/Commitments)
+  4. **Voting**
+  5. **Audit & Integrity**
+  6. **Governance Ops** (multi-sig, window schedules, emergency activation)
+
+- **Layering**
+  - **Domain**: entities, value objects, domain events, invariants.
+  - **Application**: use-cases (commands/queries), orchestration, transactions.
+  - **Infrastructure**: DB, message bus, cryptography providers, anchoring, external custodians.
+  - **Interface (Delivery)**: HTTP controllers, CLI jobs, background workers.
+
+### Must-have DDD patterns
+- **Entities** with identity: `Case`, `Official`, `Window`, `VoteSession`, `Commitment`, `Jurisdiction`
+- **Value Objects**: `JurisdictionId`, `OfficeType`, `Threshold`, `Percent`, `TimeRange`, `Kpi`
+- **Aggregates**:
+  - `CaseAggregate` (root): ensures lifecycle invariants, supports/response/votes
+  - `VoteSessionAggregate` (root): manages ballots and tally rules
+- **Repositories**: interface in domain/application, implementation in infrastructure.
+- **Domain Events**: e.g., `SupportThresholdReached`, `ResponseSubmitted`, `EvaluationRejected`, `CaseClosed`, `RecallTriggered`
+- **Domain Services** where logic doesn't fit an entity cleanly: threshold policy, eligibility policy, anchoring policy.
+
+### Clean boundaries
+- UI/HTTP must not contain domain logic.
+- Infrastructure must not leak into domain (no ORM models in domain).
+- Application layer coordinates domain objects + repositories + unit of work.
+
+---
+
+## 5) Data integrity & audit requirements (non-negotiable)
+
+### Event log
+- Use an **append-only event store** with:
+  - Insert-only operations
+  - Hash chaining (each event references previous hash)
+  - Immutable timestamps
+- Deny UPDATE/DELETE on event tables; alert and switch to safe mode if detected.
+
+### Anchoring
+- Periodically compute **Merkle roots / state hashes** for:
+  - Event store
+  - Vote receipt bulletin board
+- Anchor to multiple independent custodians:
+  - universities/research institutes
+  - judiciary/auditor
+  - financial audit body
+  - executive custodian
+- Store signed anchors and publish for public verification.
+
+### Vote receipts (privacy preserving)
+- Provide "counted-as-cast" verification:
+  - A voter can confirm their ballot exists in the counted set.
+  - **Must not** allow proving vote choice to third parties.
+- Support vote re-cast until deadline; only last valid ballot counts.
+
+### Multi-signature ops
+Sensitive actions require M-of-N approvals:
+- opening/closing vote sessions
+- publishing final results
+- changing window schedule policies
+- emergency channel activation (unless policy says threshold triggers automatically)
+
+---
+
+## 6) Testing strategy
+
+### Backend tests (required)
+- Domain unit tests for aggregates, invariants, and policies.
+- Application tests for use-case flows and edge cases.
+- Contract/integration tests for repositories, cryptography provider, anchoring adapter (use fakes/mocks where appropriate).
+
+### Frontend tests (NOT required)
+- **No frontend unit/e2e tests** for now.
+- Keep frontend minimal and strongly typed; rely on backend guarantees + manual QA.
+
+---
+
+## 7) Coding standards (readable and extensible)
+
+- Prefer **small, composable functions** and explicit naming.
+- Avoid "magic" and clever tricks; optimize for maintainability.
+- Use strict typing (where applicable) and clear interfaces.
+- Document domain invariants in code comments close to the aggregate methods.
+- Create new features by:
+  1. updating the domain model + events,
+  2. adding an application use-case,
+  3. wiring infra,
+  4. adding tests (backend).
+
+---
+
+## 8) What Cursor agents should do by default
+
+When implementing a feature:
+1. Identify the bounded context.
+2. Define/extend domain objects (entities/value objects) and invariants.
+3. Add a use-case (command/query) in the application layer.
+4. Persist through repositories (infra).
+5. Emit domain events and ensure they are recorded in append-only log.
+6. Add backend tests.
+7. Ensure no design enables vote coercion or publishing vote choices.
+
+---
+
+## 9) Quick glossary
+
+- **Window**: scheduled time period where new questions can be submitted for an office.
+- **Emergency Channel**: exceptional window opened by high threshold support.
+- **Case**: a merged, tracked civic question with lifecycle states.
+- **Two-criteria evaluation**: transparency/truthfulness + action/progress.
+- **Anchoring**: publishing signed state hashes to independent custodians.
+- **Receipt-freeness**: a voter cannot prove vote choice to others.
+
+---
+
+## 10) License & transparency
+
+- This repository should remain **publicly auditable** (open source).
+- Security-sensitive keys and secret material must never be committed.
+- All critical operations must be reproducible and verifiable via anchors and event logs.
