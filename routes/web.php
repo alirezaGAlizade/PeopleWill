@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\LocaleController;
+use App\Http\Controllers\OfficialQuestionResponseController;
 use App\Http\Controllers\ProvinceController;
 use App\Http\Controllers\PublicQuestionController;
 use App\Http\Controllers\QuestionController;
@@ -10,6 +12,9 @@ use Inertia\Inertia;
 use Laravel\Fortify\Features;
 
 Route::post('locale', [LocaleController::class, 'update'])->name('locale.update');
+
+Route::get('geo/provinces/{province}/cities', [ProvinceController::class, 'cities'])
+    ->name('geo.provinces.cities');
 
 Route::get('/', function () {
     return Inertia::render('welcome', [
@@ -24,12 +29,14 @@ Route::middleware(['auth'])->group(function () {
     Route::post('questions', [QuestionController::class, 'store'])->name('questions.store');
     Route::get('questions/{question}', [PublicQuestionController::class, 'show'])
         ->name('questions.show');
+    Route::post('questions/{question}/official-responses', [OfficialQuestionResponseController::class, 'store'])
+        ->name('questions.official-responses.store');
     Route::post('votes/{voteable_type}/{voteable_id}', [VoteController::class, 'toggle'])
         ->name('votes.toggle');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
 
     Route::get('api/provinces/{province}/cities', [ProvinceController::class, 'cities'])
         ->name('api.provinces.cities');

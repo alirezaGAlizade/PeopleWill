@@ -67,4 +67,36 @@ class QuestionPolicy
     {
         return false;
     }
+
+    /**
+     * Official assigned to the question's role may post a primary or remediation response when allowed.
+     */
+    public function respondAsOfficial(User $user, Question $question): bool
+    {
+        if ($question->official_role_id === null) {
+            return false;
+        }
+
+        if (! $user->officialRoles()->whereKey($question->official_role_id)->exists()) {
+            return false;
+        }
+
+        if ($question->status === QuestionStatus::ForRoleUserAction) {
+            return ! $question->questionResponses()->where('sequence', 1)->exists();
+        }
+
+        if ($question->status === QuestionStatus::ForRoleUserSecondAction) {
+            if ($question->questionResponses()->where('sequence', 2)->exists()) {
+                return false;
+            }
+
+            if ($question->second_response_deadline_at !== null && now()->greaterThan($question->second_response_deadline_at)) {
+                return false;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
 }

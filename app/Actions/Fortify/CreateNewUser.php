@@ -22,12 +22,19 @@ class CreateNewUser implements CreatesNewUsers
         Validator::make($input, [
             ...$this->profileRules(),
             'password' => $this->passwordRules(),
-        ])->validate();
+        ])->after(function (\Illuminate\Validation\Validator $validator) use ($input): void {
+            $this->validateGeographyConsistency($input, function (string $key, string $message) use ($validator): void {
+                $validator->errors()->add($key, $message);
+            });
+        })->validate();
 
         return User::create([
             'name' => $input['name'],
             'email' => $input['email'],
             'password' => $input['password'],
+            'country_id' => (int) $input['country_id'],
+            'province_id' => (int) $input['province_id'],
+            'city_id' => (int) $input['city_id'],
         ]);
     }
 }

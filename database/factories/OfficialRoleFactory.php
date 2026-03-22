@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\MandatoryResponseThresholdPercent;
 use App\Enums\WindowDuration;
 use App\Enums\WindowPlan;
 use App\Models\OfficialRole;
@@ -27,6 +28,10 @@ class OfficialRoleFactory extends Factory
             'window_plan' => WindowPlan::Continuously,
             'open_window_duration' => WindowDuration::SevenDays,
             'last_window_close_date' => now(),
+            'mandatory_response_threshold' => MandatoryResponseThresholdPercent::Percent5,
+            'response_deadline_days' => 14,
+            'participation_quorum_percent' => 10,
+            'response_rejection_downvote_percent' => 10,
         ];
     }
 }

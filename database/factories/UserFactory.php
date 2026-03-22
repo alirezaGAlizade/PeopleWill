@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Models\City;
+use App\Models\Province;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
@@ -24,6 +26,9 @@ class UserFactory extends Factory
      */
     public function definition(): array
     {
+        $province = Province::factory()->create();
+        $city = City::factory()->create(['province' => $province->id]);
+
         return [
             'name' => fake()->name(),
             'email' => fake()->unique()->safeEmail(),
@@ -33,6 +38,9 @@ class UserFactory extends Factory
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
+            'country_id' => $province->country,
+            'province_id' => $province->id,
+            'city_id' => $city->id,
         ];
     }
 

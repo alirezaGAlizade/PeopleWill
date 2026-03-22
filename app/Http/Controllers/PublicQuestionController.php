@@ -41,9 +41,35 @@ class PublicQuestionController extends Controller
             'city:id,name,name_en,province',
         ])->loadCount('upvotes');
 
+        $questionResponses = $question->questionResponses()
+            ->with('user:id,name')
+            ->withCount(['upvotes', 'downvotes'])
+            ->orderBy('sequence')
+            ->get()
+            ->map(function ($response) use ($request) {
+                return [
+                    'id' => $response->id,
+                    'body' => $response->body,
+                    'sequence' => $response->sequence,
+                    'created_at' => $response->created_at?->toIso8601String(),
+                    'user' => [
+                        'id' => $response->user->id,
+                        'name' => $response->user->name,
+                    ],
+                    'upvotes_count' => $response->upvotes_count,
+                    'downvotes_count' => $response->downvotes_count,
+                    'user_vote' => $response->voteTypeForUser($request->user())?->value,
+                ];
+            }
+            );
+
+        $canRespondAsOfficial = $request->user()->can('respondAsOfficial', $question);
+
         return Inertia::render('questions/show', [
             'question' => $question,
-            'userVote' => $question->voteTypeForUser($request->user()),
+            'userVote' => $question->voteTypeForUser($request->user())?->value,
+            'questionResponses' => $questionResponses,
+            'canRespondAsOfficial' => $canRespondAsOfficial,
         ]);
     }
 

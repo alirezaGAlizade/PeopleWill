@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\MandatoryResponseThresholdPercent;
 use App\Enums\WindowDuration;
 use App\Enums\WindowPlan;
 use Carbon\CarbonImmutable;
@@ -33,6 +34,10 @@ class OfficialRole extends Model
         'window_plan',
         'open_window_duration',
         'last_window_close_date',
+        'mandatory_response_threshold',
+        'response_deadline_days',
+        'participation_quorum_percent',
+        'response_rejection_downvote_percent',
     ];
 
     /**
@@ -44,6 +49,7 @@ class OfficialRole extends Model
             'window_plan' => WindowPlan::class,
             'open_window_duration' => WindowDuration::class,
             'last_window_close_date' => 'datetime',
+            'mandatory_response_threshold' => MandatoryResponseThresholdPercent::class,
         ];
     }
 

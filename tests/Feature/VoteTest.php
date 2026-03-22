@@ -1,12 +1,18 @@
 <?php
 
+use App\Enums\EffectiveArea;
 use App\Enums\VoteType;
+use App\Models\OfficialRole;
 use App\Models\Question;
 use App\Models\User;
 
 test('authenticated user can upvote a question', function () {
     $user = User::factory()->create();
-    $question = Question::factory()->create();
+    $role = OfficialRole::factory()->create(['country_id' => $user->country_id]);
+    $question = Question::factory()->create([
+        'official_role_id' => $role->id,
+        'effective_area' => EffectiveArea::Public,
+    ]);
 
     $this->actingAs($user)
         ->post(route('votes.toggle', [
@@ -27,7 +33,11 @@ test('authenticated user can upvote a question', function () {
 
 test('upvoting same question twice toggles the vote off', function () {
     $user = User::factory()->create();
-    $question = Question::factory()->create();
+    $role = OfficialRole::factory()->create(['country_id' => $user->country_id]);
+    $question = Question::factory()->create([
+        'official_role_id' => $role->id,
+        'effective_area' => EffectiveArea::Public,
+    ]);
 
     $payload = [
         'type' => VoteType::Up->value,
@@ -60,7 +70,11 @@ test('guests cannot vote', function () {
 
 test('downvote is rejected for question', function () {
     $user = User::factory()->create();
-    $question = Question::factory()->create();
+    $role = OfficialRole::factory()->create(['country_id' => $user->country_id]);
+    $question = Question::factory()->create([
+        'official_role_id' => $role->id,
+        'effective_area' => EffectiveArea::Public,
+    ]);
 
     $this->actingAs($user)
         ->post(route('votes.toggle', [
