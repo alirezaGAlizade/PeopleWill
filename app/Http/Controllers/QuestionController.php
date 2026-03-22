@@ -3,8 +3,10 @@
 namespace App\Http\Controllers;
 
 use App\Enums\EffectiveArea;
+use App\Enums\QuestionStatus;
 use App\Http\Requests\StoreQuestionRequest;
 use App\Http\Requests\UpdateQuestionRequest;
+use App\Models\OfficialRole;
 use App\Models\Province;
 use App\Models\Question;
 use Illuminate\Http\RedirectResponse;
@@ -39,6 +41,10 @@ class QuestionController extends Controller
                 ->select('id', 'name', 'name_en')
                 ->orderBy('name')
                 ->get(),
+            'officialRoles' => OfficialRole::query()
+                ->select('id', 'name', 'slug')
+                ->orderBy('name')
+                ->get(),
         ]);
     }
 
@@ -48,15 +54,29 @@ class QuestionController extends Controller
         $effectiveArea = EffectiveArea::from($validated['effective_area']);
 
         $payload = [
-            'body' => $validated['body'],
+            'official_role_id' => (int) $validated['official_role_id'],
             'effective_area' => $effectiveArea,
         ];
+
+        if (array_key_exists('body', $validated)) {
+            $payload['body'] = $validated['body'];
+        }
 
         $payload = match ($effectiveArea) {
             EffectiveArea::Public => [...$payload, 'province_id' => null, 'city_id' => null],
             EffectiveArea::Province => [...$payload, 'province_id' => $validated['province_id'], 'city_id' => null],
             EffectiveArea::City => [...$payload, 'province_id' => $validated['province_id'], 'city_id' => $validated['city_id']],
         };
+
+        $isCompleting = $question->status === QuestionStatus::Incomplete;
+
+        if ($isCompleting) {
+            $payload['status'] = QuestionStatus::Pending;
+        }
+
+        if (! $isCompleting) {
+            unset($payload['body']);
+        }
 
         $question->update($payload);
 
@@ -74,10 +94,12 @@ class QuestionController extends Controller
 
     public function store(StoreQuestionRequest $request): RedirectResponse
     {
-        $request->user()->questions()->create([
+        $question = $request->user()->questions()->create([
             'body' => $request->validated('body'),
+            'official_role_id' => null,
+            'status' => QuestionStatus::Incomplete,
         ]);
 
-        return redirect()->back();
+        return redirect()->route('questions.edit', $question);
     }
 }

@@ -3,7 +3,9 @@
 namespace App\Models;
 
 use App\Enums\EffectiveArea;
+use App\Enums\QuestionStatus;
 use App\Models\Concerns\HasVotes;
+use Database\Factories\QuestionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,7 +14,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Question extends Model
 {
-    /** @use HasFactory<\Database\Factories\QuestionFactory> */
+    /** @use HasFactory<QuestionFactory> */
     use HasFactory, HasVotes, SoftDeletes;
 
     protected bool $allowDownvotes = false;
@@ -23,6 +25,8 @@ class Question extends Model
     protected $fillable = [
         'body',
         'user_id',
+        'official_role_id',
+        'status',
         'effective_area',
         'province_id',
         'city_id',
@@ -36,6 +40,7 @@ class Question extends Model
     {
         return [
             'effective_area' => EffectiveArea::class,
+            'status' => QuestionStatus::class,
         ];
     }
 
@@ -61,6 +66,19 @@ class Question extends Model
     public function city(): BelongsTo
     {
         return $this->belongsTo(City::class);
+    }
+
+    /**
+     * @return BelongsTo<OfficialRole, $this>
+     */
+    public function officialRole(): BelongsTo
+    {
+        return $this->belongsTo(OfficialRole::class);
+    }
+
+    public function isComplete(): bool
+    {
+        return $this->status !== QuestionStatus::Incomplete;
     }
 
     /**

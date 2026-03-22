@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(IranGeographySeeder::class);
+        $this->call(OfficialRoleSeeder::class);
 
         // User::factory(10)->create();
 

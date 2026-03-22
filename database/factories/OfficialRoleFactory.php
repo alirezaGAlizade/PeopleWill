@@ -2,15 +2,13 @@
 
 namespace Database\Factories;
 
-use App\Enums\QuestionStatus;
-use App\Models\Question;
-use App\Models\User;
+use App\Models\OfficialRole;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<Question>
+ * @extends Factory<OfficialRole>
  */
-class QuestionFactory extends Factory
+class OfficialRoleFactory extends Factory
 {
     /**
      * Define the model's default state.
@@ -20,9 +18,10 @@ class QuestionFactory extends Factory
     public function definition(): array
     {
         return [
-            'user_id' => User::factory(),
-            'body' => fake()->paragraph(),
-            'status' => QuestionStatus::Pending,
+            'name' => fake()->unique()->jobTitle(),
+            'country_id' => null,
+            'province_id' => null,
+            'city_id' => null,
         ];
     }
 }

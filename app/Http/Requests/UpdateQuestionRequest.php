@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\EffectiveArea;
+use App\Enums\QuestionStatus;
 use App\Models\Question;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -29,8 +30,11 @@ class UpdateQuestionRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
-            'body' => ['required', 'string', 'max:1000'],
+        /** @var Question $question */
+        $question = $this->route('question');
+
+        $rules = [
+            'official_role_id' => ['required', 'integer', 'exists:official_roles,id'],
             'effective_area' => ['required', new Enum(EffectiveArea::class)],
             'province_id' => [
                 'nullable',
@@ -57,5 +61,11 @@ class UpdateQuestionRequest extends FormRequest
                 }),
             ],
         ];
+
+        if ($question->status === QuestionStatus::Incomplete) {
+            $rules['body'] = ['required', 'string', 'max:1000'];
+        }
+
+        return $rules;
     }
 }

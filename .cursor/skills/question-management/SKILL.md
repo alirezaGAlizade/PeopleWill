@@ -1,116 +1,141 @@
 ---
 name: question-management
-description: Civic question submission and management in the NPAP platform. Activate when creating, editing, listing, deleting, or extending questions; working with the Question model, QuestionController, QuestionPolicy, StoreQuestionRequest, UpdateQuestionRequest, or QuestionFactory; adding new question fields or validation rules; wiring the welcome page question form; or building the authenticated "My Questions" dashboard (index/edit/delete).
+description: Civic question submission and lifecycle management in NPAP. Activate when creating, editing, listing, deleting, or extending questions; working with Question status workflow, QuestionController, PublicQuestionController, QuestionPolicy, StoreQuestionRequest, UpdateQuestionRequest, QuestionFactory, welcome question submission, or My Questions pages.
 ---
 
 # Question Management
 
 ## Architecture
 
-Questions are the entry point of the civic accountability workflow. A citizen submits a question, which later becomes a **Case** once it gathers enough support.
-
-### Bounded context
-
-Questions live in the **Civic Cases** bounded context per the DDD rules in `npap-project.mdc`.
+Questions are the entry point of the civic accountability workflow in the Civic Cases bounded context.
 
 ## Key Files
 
 | Layer | File | Purpose |
 |-------|------|---------|
-| Model | `app/Models/Question.php` | Eloquent model with `SoftDeletes`, `HasFactory` |
-| Policy | `app/Policies/QuestionPolicy.php` | Ownership for `view` / `update` / `delete` / `restore`; `viewAny` / `create` for authenticated listing & creation |
-| Migration | `database/migrations/2026_03_20_181542_create_questions_table.php` | Schema: `id`, `user_id` (FK), `body` (text), timestamps, `softDeletes` |
-| Factory | `database/factories/QuestionFactory.php` | Default: `user_id` via `User::factory()`, `body` via `fake()->paragraph()` |
-| Controller | `app/Http/Controllers/QuestionController.php` | `store` (welcome); `index`, `edit`, `update`, `destroy` (My Questions) |
-| Validation | `app/Http/Requests/StoreQuestionRequest.php` | `body`: `required\|string\|max:1000`; authorize: user present |
-| Validation | `app/Http/Requests/UpdateQuestionRequest.php` | Same `body` rules; authorize: `can('update', $question)` |
-| Routes | `routes/web.php` | `POST /questions` → `questions.store` (`auth`); resource `index` / `edit` / `update` / `destroy` → `auth` + `verified` |
-| Frontend (submit) | `resources/js/pages/welcome.tsx` | `useForm({ body })` → POST `store` via Wayfinder |
-| Frontend (manage) | `resources/js/pages/questions/index.tsx` | Table, pagination (10), edit link, delete + confirm dialog |
-| Frontend (manage) | `resources/js/pages/questions/edit.tsx` | Textarea for `body`, `useForm` + `put` to `update` |
-| Nav | `resources/js/components/app-sidebar.tsx` | "My Questions" → `questions.index` (Wayfinder `index` from `@/routes/questions`) |
-| Base controller | `app/Http/Controllers/Controller.php` | Uses `AuthorizesRequests` so controllers can call `$this->authorize()` |
-| Tests | `tests/Feature/QuestionTest.php` | Store validation, soft delete, index pagination & isolation, edit/update/destroy + 403 for other users’ questions |
+| Enum | `app/Enums/QuestionStatus.php` | Status lifecycle (`incomplete` -> `pending` -> later states) |
+| Model | `app/Models/Question.php` | Fillable fields, enum casts, relations, `isComplete()` |
+| Policy | `app/Policies/QuestionPolicy.php` | Owner-only visibility for incomplete questions; ownership checks for update/delete |
+| Controller | `app/Http/Controllers/QuestionController.php` | Authenticated create/edit/update/delete for user-owned questions |
+| Public controller | `app/Http/Controllers/PublicQuestionController.php` | Public browse/show with incomplete-question restrictions |
+| Validation | `app/Http/Requests/StoreQuestionRequest.php` | Body-only creation validation |
+| Validation | `app/Http/Requests/UpdateQuestionRequest.php` | Status-aware update validation and area rules |
+| Migration | `database/migrations/2026_03_20_181542_create_questions_table.php` | Base questions schema |
+| Migration | `database/migrations/2026_03_22_002608_add_official_role_id_to_questions_table.php` | Nullable `official_role_id` FK |
+| Migration | `database/migrations/2026_03_22_005438_add_status_to_questions_table.php` | `status` column defaulting to `incomplete` |
+| Factory | `database/factories/QuestionFactory.php` | Defaults include `status = pending` for visible test records |
+| Frontend submit | `resources/js/pages/welcome.tsx` | Body-only question submission from home page |
+| Frontend list | `resources/js/pages/questions/index.tsx` | My Questions table and actions |
+| Frontend edit | `resources/js/pages/questions/edit.tsx` | Completion workflow, SweetAlert2 confirm, ReactSelect fields |
+| Frontend public | `resources/js/pages/questions/browse.tsx` | Public questions list |
+| Frontend public | `resources/js/pages/questions/show.tsx` | Public question detail |
+| Routes | `routes/web.php` | `questions.store`, public browse/show, resource edit routes |
+| Tests | `tests/Feature/QuestionTest.php` | Status transition, visibility, ownership, CRUD behaviors |
 
 ## Model Details
 
-```php
-// app/Models/Question.php
-use SoftDeletes, HasFactory;
+`Question` currently includes:
 
-protected $fillable = ['body', 'user_id'];
+- Fillable: `body`, `user_id`, `official_role_id`, `status`, `effective_area`, `province_id`, `city_id`, `visits`
+- Casts: `effective_area` => `EffectiveArea::class`, `status` => `QuestionStatus::class`
+- Helper: `isComplete(): bool` returns `status !== QuestionStatus::Incomplete`
 
-public function user(): BelongsTo  // belongs to User
-```
+Primary relations:
 
-The inverse relationship on `User`:
+- `user()` belongs to `User`
+- `officialRole()` belongs to `OfficialRole`
+- `province()` belongs to `Province`
+- `city()` belongs to `City`
 
-```php
-// app/Models/User.php
-public function questions(): HasMany
-```
+## Question Status Workflow
 
-## Policy
+`QuestionStatus` enum cases:
 
-`QuestionPolicy` ensures users only manage their own rows (`user_id` match) for `view`, `update`, `delete`, and `restore`. `viewAny` is `true` so authenticated users can open the index (the query is still scoped to `$request->user()->questions()`). `forceDelete` is denied.
+- `Incomplete`
+- `Pending`
+- `ForRoleUserAction`
+- `RoleUserActionsAccepted`
+- `RoleUserActionsNotAccepted`
+- `Done`
+
+Current workflow implementation:
+
+1. Homepage creates a draft question with body only.
+2. `QuestionController::store()` saves with `status = Incomplete` and `official_role_id = null`.
+3. User is redirected to `questions.edit`.
+4. User completes required fields (`official_role_id`, `effective_area`, and scope IDs when required).
+5. On first successful edit, status transitions from `Incomplete` to `Pending`.
+6. Once no longer incomplete, question body is locked and cannot be updated.
+
+## Validation Rules by Mode
+
+### Store (`StoreQuestionRequest`)
+
+- `body`: `required|string|max:1000`
+- No `official_role_id` on home submission.
+
+### Update (`UpdateQuestionRequest`)
+
+- `official_role_id`: always required.
+- `effective_area`: required enum.
+- `province_id` / `city_id`: conditional by effective area.
+- `body`: required only when question is `Incomplete`; ignored after completion.
+
+## Public Question Views
+
+Visibility rules for incomplete drafts:
+
+- `PublicQuestionController::browse()` excludes incomplete questions.
+- `PublicQuestionController::show()` blocks non-owners from incomplete questions.
+- `QuestionPolicy::view()` allows incomplete view only to the owner.
+
+## Frontend Patterns in This Context
+
+### Welcome submit page
+
+- Uses `useForm({ body: '' })`.
+- Sends only `body` to `questions.store`.
+- Guest users are prompted to log in before submitting.
+
+### Questions edit page
+
+- Uses ReactSelect for official role, province, and city selects.
+- Uses SweetAlert2 confirm dialog before first completion submit.
+- Textarea is `readOnly` when `status !== 'incomplete'`.
 
 ## Routes
 
-```php
-// Submission from home (any authenticated user)
-Route::middleware(['auth'])->group(function () {
-    Route::post('questions', [QuestionController::class, 'store'])->name('questions.store');
-});
+Key named routes:
 
-// My Questions (verified users only, same group as dashboard)
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::resource('questions', QuestionController::class)
-        ->only(['index', 'edit', 'update', 'destroy']);
-});
-```
+- `questions.store`
+- `questions.browse`
+- `questions.show`
+- `questions.index`
+- `questions.edit`
+- `questions.update`
+- `questions.destroy`
 
-Named routes: `questions.index`, `questions.edit`, `questions.update`, `questions.destroy`, `questions.store`.
+Prefer Wayfinder-generated imports from `@/routes/questions`.
 
-Wayfinder generates `resources/js/routes/questions/index.ts` — import e.g. `store`, `index`, `edit`, `update`, `destroy` from `@/routes/questions`.
+## Extending Question Fields
 
-## Frontend: Welcome (submit)
-
-```tsx
-const questionForm = useForm({ body: '' });
-
-questionForm.post(storeQuestion.url(), {
-    preserveScroll: true,
-    onSuccess: () => questionForm.reset('body'),
-});
-```
-
-- **Logged in**: input is editable, submit POSTs to `questions.store`.
-- **Guest**: input is `readOnly`, clicking shows a hint to log in (`welcome.login_to_ask` translation key).
-- Validation errors render below the input via `questionForm.errors.body`.
-
-## Frontend: My Questions (list & edit)
-
-- **Index**: `AppLayout`, breadcrumbs, table with truncated `body`, submitted date, Edit (`edit.url(question.id)`) and Delete (`router.delete(destroy.url(id))`) with a confirmation dialog; pagination via `prev_page_url` / `next_page_url` and page labels (10 per page from the backend).
-- **Edit**: `useForm({ body: question.body })`, `form.put(update.url(question.id))`, `InputError` for `body`.
-
-## Adding New Fields to Questions
-
-1. Create a migration adding the column to the `questions` table.
-2. Add the field to `Question::$fillable`.
-3. Update `StoreQuestionRequest::rules()` and `UpdateQuestionRequest::rules()` with validation.
-4. Update `QuestionController::store()` and `QuestionController::update()` to persist the new field.
-5. Update `QuestionFactory::definition()` with a default value.
-6. Update the welcome form and `resources/js/pages/questions/edit.tsx` (and index column if it should appear in the table).
-7. Add/update tests in `tests/Feature/QuestionTest.php`.
+1. Add migration.
+2. Update `Question` fillable/casts.
+3. Update `StoreQuestionRequest` and `UpdateQuestionRequest`.
+4. Update `QuestionController` store/update payload logic.
+5. Update `QuestionFactory`.
+6. Update relevant Inertia pages (`welcome`, `questions/edit`, `questions/index`, public pages if needed).
+7. Update feature tests.
 8. Run `vendor/bin/sail bin pint --dirty --format agent`.
-9. Regenerate Wayfinder / Vite as needed: `vendor/bin/sail yarn run build` (so new pages stay in the manifest for tests and production).
+9. Run minimum affected tests with `vendor/bin/sail artisan test --compact ...`.
 
 ## Testing Conventions
 
-- Use `User::factory()->create()` for authenticated user setup (factory verifies email by default — required for `questions.index` and related routes).
-- Use `Question::factory()->create()` or `Question::factory()->for($user)->create()` for seeding questions.
-- Assert database state with `assertDatabaseHas` / `assertSoftDeleted`.
-- Assert validation with `assertSessionHasErrors`.
-- Guest tests assert redirect to `route('login')` where middleware is `auth`.
-- Use `assertForbidden()` when acting as another user for `edit` / `update` / `destroy`.
-- Inertia: `Inertia\Testing\AssertableInertia` for `questions/index` and `questions/edit` props.
+- Use `User::factory()->create()` for auth context.
+- Use `beforeEach` role setup where needed (e.g. `$this->officialRole` in `QuestionTest`).
+- Explicitly test:
+  - store creates `incomplete` and redirects to edit,
+  - incomplete -> pending transition on first valid update,
+  - pending body lock behavior,
+  - incomplete hidden from public browse,
+  - non-owner forbidden from viewing incomplete question.

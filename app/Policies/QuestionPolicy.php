@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\QuestionStatus;
 use App\Models\Question;
 use App\Models\User;
 
@@ -20,6 +21,10 @@ class QuestionPolicy
      */
     public function view(User $user, Question $question): bool
     {
+        if ($question->status === QuestionStatus::Incomplete) {
+            return $user->id === $question->user_id;
+        }
+
         return true;
     }
 

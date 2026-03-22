@@ -1,6 +1,7 @@
 import { Transition } from '@headlessui/react';
 import { Head, useForm } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Swal from 'sweetalert2';
 import Select, {
     type ClassNamesConfig,
     type GroupBase,
@@ -36,9 +37,17 @@ type CityRow = {
     name_en: string;
 };
 
+type OfficialRoleRow = {
+    id: number;
+    name: string;
+    slug: string;
+};
+
 type QuestionPayload = {
     id: number;
     body: string;
+    status: string;
+    official_role_id: number | null;
     effective_area: EffectiveAreaValue | null;
     province_id: number | null;
     city_id: number | null;
@@ -63,9 +72,11 @@ function readXsrfToken(): string {
 export default function EditQuestion({
     question,
     provinces,
+    officialRoles,
 }: {
     question: QuestionPayload;
     provinces: ProvinceRow[];
+    officialRoles: OfficialRoleRow[];
 }) {
     const { locale, t } = useTranslations();
     const isEn = locale === 'en';
@@ -73,8 +84,11 @@ export default function EditQuestion({
     const initialEffectiveArea: EffectiveAreaValue =
         question.effective_area ?? 'public';
 
+    const isDraftIncomplete = question.status === 'incomplete';
+
     const form = useForm({
         body: question.body,
+        official_role_id: question.official_role_id ?? null,
         effective_area: initialEffectiveArea,
         province_id: question.province_id ?? null,
         city_id: question.city_id ?? null,
@@ -114,6 +128,19 @@ export default function EditQuestion({
 
     const selectedCityOption =
         cityOptions.find((o) => o.value === form.data.city_id) ?? null;
+
+    const officialRoleOptions: SelectOption[] = useMemo(
+        () =>
+            officialRoles.map((role) => ({
+                value: role.id,
+                label: role.name,
+            })),
+        [officialRoles],
+    );
+
+    const selectedOfficialRoleOption =
+        officialRoleOptions.find((o) => o.value === form.data.official_role_id) ??
+        null;
 
     const loadCities = useCallback(
         async (provinceId: number) => {
@@ -245,8 +272,24 @@ export default function EditQuestion({
         form.setData('effective_area', value);
     };
 
-    const submit = (e: React.FormEvent): void => {
+    const submit = async (e: React.FormEvent): Promise<void> => {
         e.preventDefault();
+
+        if (isDraftIncomplete) {
+            const result = await Swal.fire({
+                title: t('questions.confirm_submit_title'),
+                text: t('questions.confirm_submit_text'),
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: t('questions.confirm_submit_button'),
+                cancelButtonText: t('questions.cancel'),
+            });
+
+            if (!result.isConfirmed) {
+                return;
+            }
+        }
+
         form.put(update.url(question.id), {
             preserveScroll: true,
         });
@@ -275,7 +318,8 @@ export default function EditQuestion({
                             onChange={(e) =>
                                 form.setData('body', e.target.value)
                             }
-                            required
+                            readOnly={!isDraftIncomplete}
+                            required={isDraftIncomplete}
                             rows={8}
                             className={cn(
                                 'border-input placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
@@ -285,6 +329,30 @@ export default function EditQuestion({
                             aria-invalid={Boolean(form.errors.body)}
                         />
                         <InputError message={form.errors.body} />
+                    </div>
+
+                    <div className="grid gap-2">
+                        <Label htmlFor="official_role_id">
+                            {t('questions.label_role')}
+                        </Label>
+                        <Select<SelectOption, false>
+                            inputId="official_role_id"
+                            instanceId="question-official-role"
+                            options={officialRoleOptions}
+                            value={selectedOfficialRoleOption}
+                            onChange={(opt) =>
+                                form.setData(
+                                    'official_role_id',
+                                    opt?.value ?? null,
+                                )
+                            }
+                            isClearable
+                            placeholder={t('questions.select_role')}
+                            classNames={selectClassNames}
+                            styles={selectStyles}
+                            unstyled
+                        />
+                        <InputError message={form.errors.official_role_id} />
                     </div>
 
                     <fieldset className="grid gap-3">

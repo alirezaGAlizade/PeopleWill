@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\QuestionStatus;
 use App\Models\Question;
 use App\Models\QuestionVisit;
 use Illuminate\Http\Request;
@@ -15,6 +16,7 @@ class PublicQuestionController extends Controller
     {
         return Inertia::render('questions/browse', [
             'questions' => Question::query()
+                ->where('status', '!=', QuestionStatus::Incomplete)
                 ->with(['user:id,name'])
                 ->withCount('upvotes')
                 ->latest()
@@ -25,6 +27,10 @@ class PublicQuestionController extends Controller
 
     public function show(Request $request, Question $question): Response
     {
+        if ($question->status === QuestionStatus::Incomplete && $question->user_id !== (int) $request->user()->id) {
+            abort(403);
+        }
+
         $this->authorize('view', $question);
         $this->recordUniqueVisit($question, (int) $request->user()->id);
 
