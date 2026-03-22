@@ -34,7 +34,12 @@ class PublicQuestionController extends Controller
         $this->authorize('view', $question);
         $this->recordUniqueVisit($question, (int) $request->user()->id);
 
-        $question->load(['user:id,name'])->loadCount('upvotes');
+        $question->load([
+            'user:id,name',
+            'officialRole:id,name',
+            'province:id,name,name_en',
+            'city:id,name,name_en,province',
+        ])->loadCount('upvotes');
 
         return Inertia::render('questions/show', [
             'question' => $question,

@@ -2,6 +2,8 @@
 
 use App\Enums\EffectiveArea;
 use App\Enums\QuestionStatus;
+use App\Enums\WindowDuration;
+use App\Enums\WindowPlan;
 use App\Models\City;
 use App\Models\OfficialRole;
 use App\Models\Province;
@@ -384,4 +386,104 @@ test('non-owner cannot view another users incomplete question', function () {
     $this->actingAs($other)
         ->get(route('questions.show', $question))
         ->assertForbidden();
+});
+
+test('public show includes role and locale-capable area relations', function () {
+    $user = User::factory()->create();
+    $province = Province::factory()->create();
+    $city = City::factory()->create(['province' => $province->id]);
+    $question = Question::factory()->for($user)->create([
+        'status' => QuestionStatus::Pending,
+        'effective_area' => EffectiveArea::City,
+        'official_role_id' => $this->officialRole->id,
+        'province_id' => $province->id,
+        'city_id' => $city->id,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('questions.show', $question))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('questions/show')
+            ->where('question.official_role.name', $this->officialRole->name)
+            ->where('question.province.name', $province->name)
+            ->where('question.city.name', $city->name)
+        );
+});
+
+test('edit page only includes official roles with open windows', function () {
+    $user = User::factory()->create();
+    $question = Question::factory()->for($user)->create();
+
+    $openPeriodicRole = OfficialRole::factory()->create([
+        'name' => 'Open periodic role',
+        'window_plan' => WindowPlan::Every2Months,
+        'open_window_duration' => WindowDuration::SevenDays,
+        'last_window_close_date' => now()->subMonthsNoOverflow(2)->subDays(3),
+    ]);
+    $closedPeriodicRole = OfficialRole::factory()->create([
+        'name' => 'Closed periodic role',
+        'window_plan' => WindowPlan::Every2Months,
+        'open_window_duration' => WindowDuration::SevenDays,
+        'last_window_close_date' => now()->subMonthsNoOverflow(2)->subDays(10),
+    ]);
+    $continuousRole = OfficialRole::factory()->create([
+        'name' => 'Continuous role',
+        'window_plan' => WindowPlan::Continuously,
+        'open_window_duration' => WindowDuration::SevenDays,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('questions.edit', $question))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('questions/edit')
+            ->where('officialRoles', function ($roles) use ($openPeriodicRole, $closedPeriodicRole, $continuousRole): bool {
+                $roleIds = collect($roles)->pluck('id');
+
+                return $roleIds->contains($openPeriodicRole->id)
+                    && $roleIds->contains($continuousRole->id)
+                    && ! $roleIds->contains($closedPeriodicRole->id);
+            })
+        );
+});
+
+test('continuous role is always available on question edit page', function () {
+    $user = User::factory()->create();
+    $question = Question::factory()->for($user)->create();
+    $continuousRole = OfficialRole::factory()->create([
+        'name' => 'Always open role',
+        'window_plan' => WindowPlan::Continuously,
+        'open_window_duration' => WindowDuration::SevenDays,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('questions.edit', $question))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('questions/edit')
+            ->where('officialRoles', function ($roles) use ($continuousRole): bool {
+                return collect($roles)->pluck('id')->contains($continuousRole->id);
+            })
+        );
+});
+
+test('update rejects official role when window is closed', function () {
+    $user = User::factory()->create();
+    $question = Question::factory()->for($user)->create([
+        'status' => QuestionStatus::Incomplete,
+    ]);
+    $closedRole = OfficialRole::factory()->create([
+        'window_plan' => WindowPlan::Every2Months,
+        'open_window_duration' => WindowDuration::SevenDays,
+        'last_window_close_date' => now()->subMonthsNoOverflow(2)->subDays(10),
+    ]);
+
+    $this->actingAs($user)
+        ->put(route('questions.update', $question), [
+            'body' => 'Text',
+            'official_role_id' => $closedRole->id,
+            'effective_area' => EffectiveArea::Public->value,
+        ])
+        ->assertSessionHasErrors('official_role_id');
 });

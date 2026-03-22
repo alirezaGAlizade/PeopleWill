@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Enums\WindowDuration;
+use App\Enums\WindowPlan;
 use App\Models\OfficialRole;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,6 +24,9 @@ class OfficialRoleFactory extends Factory
             'country_id' => null,
             'province_id' => null,
             'city_id' => null,
+            'window_plan' => WindowPlan::Continuously,
+            'open_window_duration' => WindowDuration::SevenDays,
+            'last_window_close_date' => now(),
         ];
     }
 }

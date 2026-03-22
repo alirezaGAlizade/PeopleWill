@@ -42,6 +42,7 @@ class QuestionController extends Controller
                 ->orderBy('name')
                 ->get(),
             'officialRoles' => OfficialRole::query()
+                ->withOpenWindow()
                 ->select('id', 'name', 'slug')
                 ->orderBy('name')
                 ->get(),

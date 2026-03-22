@@ -4,7 +4,9 @@ namespace App\Http\Requests;
 
 use App\Enums\EffectiveArea;
 use App\Enums\QuestionStatus;
+use App\Models\OfficialRole;
 use App\Models\Question;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -34,7 +36,18 @@ class UpdateQuestionRequest extends FormRequest
         $question = $this->route('question');
 
         $rules = [
-            'official_role_id' => ['required', 'integer', 'exists:official_roles,id'],
+            'official_role_id' => [
+                'required',
+                'integer',
+                'exists:official_roles,id',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    $officialRole = OfficialRole::query()->find((int) $value);
+
+                    if ($officialRole === null || ! $officialRole->isWindowOpen()) {
+                        $fail('The selected official role is not in an open question window.');
+                    }
+                },
+            ],
             'effective_area' => ['required', new Enum(EffectiveArea::class)],
             'province_id' => [
                 'nullable',

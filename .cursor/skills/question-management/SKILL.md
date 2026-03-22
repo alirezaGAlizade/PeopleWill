@@ -1,6 +1,6 @@
 ---
 name: question-management
-description: Civic question submission and lifecycle management in NPAP. Activate when creating, editing, listing, deleting, or extending questions; working with Question status workflow, QuestionController, PublicQuestionController, QuestionPolicy, StoreQuestionRequest, UpdateQuestionRequest, QuestionFactory, welcome question submission, or My Questions pages.
+description: Civic question submission and lifecycle management in NPAP. Activate when creating, editing, listing, deleting, or extending questions; working with Question status workflow, QuestionController, PublicQuestionController, QuestionPolicy, StoreQuestionRequest, UpdateQuestionRequest, QuestionFactory, welcome question submission, My Questions pages, window-aware role filtering, or no-open-window UX behavior.
 ---
 
 # Question Management
@@ -20,6 +20,8 @@ Questions are the entry point of the civic accountability workflow in the Civic 
 | Public controller | `app/Http/Controllers/PublicQuestionController.php` | Public browse/show with incomplete-question restrictions |
 | Validation | `app/Http/Requests/StoreQuestionRequest.php` | Body-only creation validation |
 | Validation | `app/Http/Requests/UpdateQuestionRequest.php` | Status-aware update validation and area rules |
+| Enum dependency | `app/Enums/WindowPlan.php` | Official role window cadence used by role availability logic |
+| Enum dependency | `app/Enums/WindowDuration.php` | Official role duration used by role availability logic |
 | Migration | `database/migrations/2026_03_20_181542_create_questions_table.php` | Base questions schema |
 | Migration | `database/migrations/2026_03_22_002608_add_official_role_id_to_questions_table.php` | Nullable `official_role_id` FK |
 | Migration | `database/migrations/2026_03_22_005438_add_status_to_questions_table.php` | `status` column defaulting to `incomplete` |
@@ -77,9 +79,21 @@ Current workflow implementation:
 ### Update (`UpdateQuestionRequest`)
 
 - `official_role_id`: always required.
+- `official_role_id`: additionally validated against role window state using a closure rule:
+  - loads `OfficialRole` by ID
+  - calls `OfficialRole::isWindowOpen()`
+  - fails with `The selected official role is not in an open question window.` when closed
 - `effective_area`: required enum.
 - `province_id` / `city_id`: conditional by effective area.
 - `body`: required only when question is `Incomplete`; ignored after completion.
+
+## Controller Window Filtering
+
+`QuestionController::edit()` now limits role choices to open windows only:
+
+- `OfficialRole::query()->withOpenWindow()->select('id', 'name', 'slug')->orderBy('name')->get()`
+
+This keeps the edit form synchronized with current role window availability.
 
 ## Public Question Views
 
@@ -102,6 +116,14 @@ Visibility rules for incomplete drafts:
 - Uses ReactSelect for official role, province, and city selects.
 - Uses SweetAlert2 confirm dialog before first completion submit.
 - Textarea is `readOnly` when `status !== 'incomplete'`.
+- Uses `hasOpenRoles = officialRoleOptions.length > 0` to control role availability UI.
+- If no roles are open:
+  - shows `t('questions.no_open_windows')`,
+  - disables the official role select (`isDisabled`),
+  - disables the submit button.
+- Translation key `questions.no_open_windows` exists in:
+  - `lang/en/app.php`
+  - `lang/fa/app.php`
 
 ## Routes
 
@@ -138,4 +160,7 @@ Prefer Wayfinder-generated imports from `@/routes/questions`.
   - incomplete -> pending transition on first valid update,
   - pending body lock behavior,
   - incomplete hidden from public browse,
-  - non-owner forbidden from viewing incomplete question.
+  - non-owner forbidden from viewing incomplete question,
+  - edit page includes only roles with currently-open windows,
+  - continuously-open roles are always available in edit role list,
+  - update rejects closed-window role selection with `official_role_id` validation error.

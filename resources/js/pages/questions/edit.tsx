@@ -141,6 +141,7 @@ export default function EditQuestion({
     const selectedOfficialRoleOption =
         officialRoleOptions.find((o) => o.value === form.data.official_role_id) ??
         null;
+    const hasOpenRoles = officialRoleOptions.length > 0;
 
     const loadCities = useCallback(
         async (provinceId: number) => {
@@ -335,6 +336,11 @@ export default function EditQuestion({
                         <Label htmlFor="official_role_id">
                             {t('questions.label_role')}
                         </Label>
+                        {!hasOpenRoles && (
+                            <p className="text-sm text-muted-foreground">
+                                {t('questions.no_open_windows')}
+                            </p>
+                        )}
                         <Select<SelectOption, false>
                             inputId="official_role_id"
                             instanceId="question-official-role"
@@ -347,6 +353,7 @@ export default function EditQuestion({
                                 )
                             }
                             isClearable
+                            isDisabled={!hasOpenRoles}
                             placeholder={t('questions.select_role')}
                             classNames={selectClassNames}
                             styles={selectStyles}
@@ -469,7 +476,10 @@ export default function EditQuestion({
                     )}
 
                     <div className="flex items-center gap-4">
-                        <Button type="submit" disabled={form.processing}>
+                        <Button
+                            type="submit"
+                            disabled={form.processing || !hasOpenRoles}
+                        >
                             {t('questions.save_changes')}
                         </Button>
                         <Button
